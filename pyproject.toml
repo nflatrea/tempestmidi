@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tempestmidi"
+version = "v1.112026"
+description = "Convert MIDI files into polyphonic TEMPEST videos that radiate music over HDMI"
+readme = "README"
+requires-python = ">=3.10"
+dependencies = ["numpy", "mido", "requests", "imageio-ffmpeg"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+tempestmidi = "tempestmidi.cli:main"
+
+[tool.setuptools]
+packages = ["tempestmidi"]

@@ -1,0 +1,203 @@
+
+                                     /\ o
+                              o     /_ /~~/   BzZz.
+                               \      /\/
+                                \    /
+                                 \  /
+                        ,--------------------,
+                        | ,--------------,   |
+                        | |##############| O |
+                        | |==============| O |
+                        | |--------------|...|
+                        | |______________|I#I|
+                        |_beemo__________dcau|
+                        TEMPEST MIDI v1.112026
+                        developped by beemo <3
+
+  README.TXT
+
+  Convert MIDI files into POLYPHONIC TEMPEST VIDEOS. When one of these
+  videos plays fullscreen over HDMI, the cable's unintended electromagnetic
+  emissions carry the music, and any AM-capable receiver can pick it up
+  (SDR with gqrx / SDR++, HackRF PortaPack, ...).
+
+  This project is higly inspired by erikyyy 's Tempest for Eliza
+  http://www.erikyyy.de/tempest/ : every scanline is full-width white or
+  black, for maximum emitted power. On top of that it adds POLYPHONY and
+  pitch derived from the real video line rate.
+
+  HOW IT WORKS
+
+  White and black scanlines encode to different HDMI TMDS symbol streams, so
+  they radiate differently at harmonics of the pixel clock. Alternating white
+  and black bands of rows therefore switches the emission on and off at an
+  audio rate. That's AM, and the band period sets the pitch:
+
+  one scanline = one audio sample   1920x1080@60: 1125 * 60 = 67500 lines/s
+
+  row 0   |################################|  on    every row is full width
+  row 1   |################################|  on    (max power, like Eliza)
+  row 2   |                                |  off
+  row 3   |                                |  off
+  ...      period (in rows) = line_rate / pitch
+
+  Voices are mixed per row, always full width (--mix):
+
+  sd (default)
+    What each row does   sum of the voices' squares, normalized to the
+                         active voices, converted to 1 bit by sigma-delta
+    Power per voice      1 voice = full Eliza square; a chord shares the
+                         full swing
+    Notes                sigma-delta noise sits near 30 kHz, above the
+                         receiver's audio band
+
+  arp
+    What each row does   one voice per frame, rotating (chiptune arpeggio
+                         at 60 Hz)
+    Power per voice      full for every note
+    Notes                chords sound like arpeggios
+
+  rgb
+    What each row does   voice i on color i % 3: red, green, blue rows
+    Power per voice      each voice owns a whole TMDS lane
+    Notes                experimental: lanes may add or partly cancel at the
+                         receiver; uses yuv444p
+
+  - Phase is computed from the absolute line time, vertical blanking included,
+    so there's no per-frame reset and no 60 Hz buzz when the player is in sync.
+  - Percussion (GM channel 10) is dropped. When more notes are held than there
+    are voices, the highest pitches win.
+  - Velocity is ignored by default, so every note is at full power. Use
+    --velocity to honor it.
+
+  INSTALL
+
+    python3 -m venv .venv
+    .venv/bin/pip install -e '.[dev]'
+
+  ffmpeg is bundled through imageio-ffmpeg, so no system install is needed.
+
+  USAGE
+
+    tempestmidi search mario         # search bitmidi.com
+    tempestmidi fetch 72257          # download into ~/.cache/tempestmidi/
+    tempestmidi convert bitmidi:72257 -o mario.mp4
+    tempestmidi convert song.mid -o song.mp4 --voices 3 --preview-audio
+    tempestmidi convert song.mid -o song_arp.mp4 --mix arp
+    tempestmidi convert song.mid -o song_rgb.mp4 --mix rgb --voices 3
+
+    # Example on 59.94 Hz display
+    tempestmidi convert song.mid -o song.mp4 --mode 1920x1080x1125@60000/1001
+
+  --voices N                   (default: 4)
+      max simultaneous voices (fewer voices = more power each in sd)
+
+  --mix sd|arp|rgb             (default: sd)
+      voice mixing, see above
+
+  --velocity                   (default: off)
+      scale level by note velocity (less power)
+
+  --mode WxHxVTOTAL@REFRESH    (default: 1920x1080x1125@60)
+      must match the display mode used for playback, since pitch depends on
+      the line rate
+
+  --preview-audio              (default: off)
+      adds an audio track with the expected demodulated mix (for humans;
+      mute it during reception if you like)
+
+  Output is H.264 at 60 fps CFR with the deblocking filter disabled, so band
+  edges stay sharp: yuv420p (High) for sd/arp, and lossless yuv444p (High
+  4:4:4 Predictive, crf 0) for rgb, so adjacent rows don't share chroma.
+
+  PLAYBACK REQUIREMENTS
+
+  - FULLSCREEN, AT NATIVE RESOLUTION, WITH NO SCALING. Use the same resolution
+    as --mode.
+  - THE DISPLAY REFRESH RATE MUST MATCH THE VIDEO: 60 Hz for the default mode.
+    If your output runs at 59.94 Hz, convert with
+    --mode 1920x1080x1125@60000/1001.
+  - Use a player that doesn't drop or repeat frames, e.g.
+    mpv --fs --video-sync=display-resample or mpv --fs. Every dropped frame
+    causes a short glitch.
+  - Use full-range RGB output and turn off any GPU dithering or "enhancement"
+    features. They change the pixel values that get TMDS-encoded.
+  - Volume and quality are best with nothing else on screen: no OSD, no mouse
+    cursor.
+
+  RECEIVING
+
+  - The signal is AM, so use AM mode with about 10 kHz bandwidth.
+  - Tune near a harmonic of the pixel clock. For 1080p60 that's
+    148.5 MHz x k (148.5, 297, 445.5, 594, ... MHz). The strongest harmonic
+    depends on your cable and GPU, so scan around them on a waterfall.
+  - Start with the antenna close to the HDMI cable (cm to 1 m).
+  - If examples/tempest_elize_song.mp4 is audible on your setup, the same
+    frequency works for tempestmidi videos.
+
+  Tested setups
+
+  RECEIVER                            FREQUENCY      NOTES
+  pending hardware test (task 6.1)
+
+  SHOWCASE
+
+  Iconic and geek tunes that work well, rendered in the two modes that
+  sounded best on hardware (arp with 6 voices, rgb with 3):
+
+  TUNE                                      BITMIDI  LENGTH  NOTES DROPPED
+                                            ID               ARP6 / RGB3
+  Legend of Zelda - Overworld               68140    72 s    0 / 0
+  Tetris - Main Theme                       100444   34 s    0 / 0
+  Sonic - Green Hill Zone                   95742    90 s    0 / 80
+  Pirates of the Caribbean - He's a Pirate  85261    78 s    6 / 425
+  Star Wars - Imperial March                29414    106 s   22 / 232
+  Final Fantasy XIII - Prelude              46512    77 s    0 / 31
+  Portal - Still Alive                      86046    175 s   0 / 18
+  Nyan Cat                                  59815    113 s   0 / 0
+  Skyrim - Sons of Skyrim                   101127   101 s   0 / 344
+
+  To regenerate them (videos are git-ignored):
+
+    for s in "zelda_overworld 68140" "tetris 100444" \
+             "sonic_greenhill 95742" "pirates 85261" \
+             "imperial_march 29414" "ff13_prelude 46512" \
+             "portal_still_alive 86046" "nyan_cat 59815" \
+             "skyrim_sons 101127"; do
+      set -- $s
+      tempestmidi convert bitmidi:$2 -o showcase/$1_arp6.mp4 \
+          --mix arp --voices 6 --preview-audio
+      tempestmidi convert bitmidi:$2 -o showcase/$1_rgb3.mp4 \
+          --mix rgb --voices 3 --preview-audio
+    done
+
+  The voice cap keeps the highest notes, so dense arrangements lose their
+  lower parts in rgb with 3 voices. Use --voices 6 there for fuller harmony:
+  lanes then carry 2 voices each.
+
+  REPOSITORY LAYOUT
+
+    tempestmidi/   source.py (bitmidi + MIDI), voices.py, render.py,
+                   export.py, cli.py
+    tests/         pytest suite
+    examples/      reference Tempest-for-Eliza HDMI video
+                   (see examples/README.md)
+          
+  DEVELOPMENT
+
+    .venv/bin/pytest -q
+
+  The tests cover bitmidi (mocked HTTP), MIDI normalization, voice
+  allocation, renderer mix modes, pitch and phase accuracy, and mp4 round
+  trips: decode the file, compare rows and channels, and measure the band
+  pitch.
+
+
+  LICENSE
+
+  This repository is licensed under the MIT License. See the LICENSE file 
+  for details.
+
+  CONTRIBUTION
+
+  Feel free to contribute by submitting a pull request or opening an issue ;)
